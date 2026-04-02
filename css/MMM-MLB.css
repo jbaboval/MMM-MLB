@@ -1,0 +1,158 @@
+/* MMM-MLB.css — Styles for the MLB MagicMirror module */
+
+/* ── Container ─────────────────────────────────────────────── */
+.MMM-MLB {
+  font-family: inherit;
+  color: #ffffff;
+  max-width: 280px;
+  padding: 6px 0;
+}
+
+/* ── Section label ─────────────────────────────────────────── */
+.mlb-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #e87722; /* MLB orange accent */
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+/* ── Game card ─────────────────────────────────────────────── */
+.mlb-game-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 4px;
+}
+
+/* ── Team column ───────────────────────────────────────────── */
+.mlb-team-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 72px;
+  opacity: 0.7;
+  transition: opacity 0.3s;
+}
+
+.mlb-team-col.mlb-winner {
+  opacity: 1.0;
+}
+
+.mlb-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  /* Logos render in full colour; drop-shadow adds subtle depth */
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+}
+
+.mlb-team-abbr {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #cccccc;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.mlb-winner .mlb-team-abbr {
+  color: #ffffff;
+}
+
+.mlb-score {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+}
+
+/* ── Centre column (status / game time) ────────────────────── */
+.mlb-centre {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 0 4px;
+  text-align: center;
+}
+
+.mlb-status {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #888888;
+  text-transform: uppercase;
+}
+
+.mlb-gametime {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.mlb-venue {
+  font-size: 9px;
+  color: #888888;
+  margin-top: 3px;
+  text-align: center;
+  line-height: 1.3;
+  max-width: 90px;
+}
+
+/* ── Divider ───────────────────────────────────────────────── */
+.mlb-divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, #333333, transparent);
+  margin: 6px 0 8px;
+}
+
+/* ── AI insight ────────────────────────────────────────────── */
+.mlb-insight {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e0e0e0;
+  margin-bottom: 6px;
+}
+
+/* ── Standings bullet ──────────────────────────────────────── */
+.mlb-standings-bullet {
+  font-size: 11px;
+  color: #aaaaaa;
+  line-height: 1.4;
+  margin-top: 4px;
+  padding-left: 2px;
+}
+
+/* ── No-game state ─────────────────────────────────────────── */
+.mlb-no-game {
+  font-size: 12px;
+  color: #666666;
+  margin: 6px 0;
+  font-style: italic;
+}
+
+/* ── Rate limit notice ─────────────────────────────────────── */
+.mlb-rate-notice {
+  font-size: 9px;
+  color: #555555;
+  margin-top: 8px;
+  letter-spacing: 0.5px;
+}
+
+/* ── Loading / error states ────────────────────────────────── */
+.mlb-loading {
+  font-size: 12px;
+  color: #555555;
+  font-style: italic;
+}
+
+.mlb-error {
+  font-size: 11px;
+  color: #cc4444;
+  line-height: 1.4;
+}

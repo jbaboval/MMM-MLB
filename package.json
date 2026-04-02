@@ -1,0 +1,9 @@
+{
+  "name": "mmm-mlb",
+  "version": "1.0.0",
+  "description": "MagicMirror² module for MLB events with AI-powered insights",
+  "main": "MMM-MLB.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0"
+  }
+}
