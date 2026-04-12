@@ -48,7 +48,7 @@ Module.register("MMM-MLB", {
   getDom() {
     const wrapper = document.createElement("div");
     wrapper.className = "MMM-MLB";
-    wrapper.style.cssText = "width:260px;max-width:260px;overflow:hidden;position:relative;";
+    wrapper.style.cssText = "width:100%;overflow:hidden;position:relative;";
 
     if (!this.loaded) {
       const loading = document.createElement("div");
@@ -131,6 +131,15 @@ Module.register("MMM-MLB", {
         ? "No game yesterday"
         : "No upcoming game scheduled";
       wrapper.appendChild(noGame);
+    }
+
+    // ── Last game note (afternoon only) ───────────────────
+    if (!d.isBeforeNoon && d.lastGameData && d.lastGameData.final) {
+      const lg = d.lastGameData;
+      const lgEl = document.createElement("div");
+      lgEl.className = "mlb-last-game";
+      lgEl.textContent = `Last Game: ${lg.awayTeamAbbr} ${lg.awayScore} – ${lg.homeTeamAbbr} ${lg.homeScore}`;
+      wrapper.appendChild(lgEl);
     }
 
     // ── AI insight ─────────────────────────────────────────

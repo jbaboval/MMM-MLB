@@ -284,7 +284,7 @@ async function callClaude(apiKey, prompt) {
   }
 }
 
-async function getInsight(config, isBeforeNoon, gameData, boxSummary, transactions, standingsChanges, cache) {
+async function getInsight(config, isBeforeNoon, gameData, lastGameData, boxSummary, transactions, standingsChanges, cache) {
   const todayStr = today();
 
   // Check daily limit
@@ -315,11 +315,19 @@ ${boxSummary}`;
       prompt = `The configured favorite team (ID: ${config.favoriteTeam}) had no game yesterday.`;
     }
   } else {
+    // Afternoon: lead with yesterday's result for context, then the upcoming game
+    if (lastGameData && lastGameData.final) {
+      prompt = `Most recent completed game (yesterday):
+${lastGameData.awayTeamName} ${lastGameData.awayScore} @ ${lastGameData.homeTeamName} ${lastGameData.homeScore} (FINAL)
+
+Box score summary:
+${boxSummary}`;
+    } else {
+      prompt = `The configured favorite team had no game yesterday.`;
+    }
     if (gameData) {
       const dateStr = gameData.gameDate || "upcoming";
-      prompt = `Upcoming game: ${gameData.awayTeamName} @ ${gameData.homeTeamName} on ${dateStr} at ${gameData.gameTime}${gameData.venue ? ` (${gameData.venue})` : ""}.`;
-    } else {
-      prompt = `The configured favorite team (ID: ${config.favoriteTeam}) has no upcoming games in the next two weeks.`;
+      prompt += `\n\nNext scheduled game: ${gameData.awayTeamName} @ ${gameData.homeTeamName} on ${dateStr} at ${gameData.gameTime}${gameData.venue ? ` (${gameData.venue})` : ""}.`;
     }
   }
 
@@ -391,7 +399,8 @@ module.exports = NodeHelper.create({
     const cache = loadCache();
 
     // ── Fetch game data ──────────────────────────────────
-    let gameData = null;
+    let gameData = null;      // upcoming game (afternoon) or yesterday's result (morning)
+    let lastGameData = null;  // yesterday's result for afternoon "Last Game" note + AI context
     let boxSummary = "No game data.";
 
     if (isBeforeNoon) {
@@ -406,8 +415,21 @@ module.exports = NodeHelper.create({
         }
       }
     } else {
-      const futureData = await fetchFutureSchedule(config.favoriteTeam);
+      // Fetch upcoming game and yesterday's result in parallel
+      const [futureData, yestData] = await Promise.all([
+        fetchFutureSchedule(config.favoriteTeam),
+        fetchSchedule(yesterday(), config.favoriteTeam),
+      ]);
       gameData = extractNextGame(futureData);
+      lastGameData = extractGameData(yestData);
+      if (lastGameData && lastGameData.gamePk) {
+        try {
+          const boxScore = await fetchBoxScore(lastGameData.gamePk);
+          boxSummary = summarizeBoxScore(boxScore, lastGameData);
+        } catch (err) {
+          console.warn("MMM-MLB: yesterday box score fetch failed:", err.message);
+        }
+      }
     }
 
     // ── Fetch standings ──────────────────────────────────
@@ -426,7 +448,7 @@ module.exports = NodeHelper.create({
 
     // ── AI insight ───────────────────────────────────────
     const insightResult = await getInsight(
-      config, isBeforeNoon, gameData, boxSummary, transactions, standingsChanges, cache
+      config, isBeforeNoon, gameData, lastGameData, boxSummary, transactions, standingsChanges, cache
     );
 
     // ── Persist cache ────────────────────────────────────
@@ -443,6 +465,7 @@ module.exports = NodeHelper.create({
     this.sendSocketNotification("MMM_MLB_DATA", {
       isBeforeNoon,
       gameData,
+      lastGameData,
       insight: insightResult.insight,
       standingsBullet: insightResult.standingsBullet,
       rateLimited: insightResult.rateLimited || false,
