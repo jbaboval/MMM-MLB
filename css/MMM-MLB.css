@@ -14,7 +14,7 @@
 .mlb-label {
   font-size: 10px;
   letter-spacing: 2px;
-  color: #e87722; /* MLB orange accent */
+  color: #e87722;           /* MLB orange accent */
   text-transform: uppercase;
   margin-bottom: 10px;
   font-weight: 600;
@@ -28,7 +28,7 @@
   justify-content: space-between;
   margin-bottom: 10px;
   gap: 4px;
-  overflow: hidden;         /* contain logos within the card */
+  overflow: hidden;
   width: 100%;
 }
 
@@ -41,8 +41,8 @@
   width: 80px;
   min-width: 80px;
   max-width: 80px;
-  overflow: hidden;         /* hard stop on logo growth */
-  opacity: 0.7;
+  overflow: hidden;
+  opacity: 0.55;            /* dim the losing / away team */
   transition: opacity 0.3s;
 }
 
@@ -58,20 +58,15 @@
   max-height: 52px !important;
   object-fit: contain;
   flex-shrink: 0;
-  /* Logos render in full colour; drop-shadow adds subtle depth */
   filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
 }
 
 .mlb-team-abbr {
   font-size: 11px;
   letter-spacing: 1px;
-  color: #cccccc;
+  color: #ffffff;           /* always white — opacity on the column dims it when needed */
   text-transform: uppercase;
   font-weight: 600;
-}
-
-.mlb-winner .mlb-team-abbr {
-  color: #ffffff;
 }
 
 .mlb-score {
@@ -95,7 +90,7 @@
 .mlb-status {
   font-size: 10px;
   letter-spacing: 1px;
-  color: #888888;
+  color: #cccccc;
   text-transform: uppercase;
 }
 
@@ -108,7 +103,7 @@
 
 .mlb-venue {
   font-size: 9px;
-  color: #888888;
+  color: #999999;           /* intentionally receded — secondary detail */
   margin-top: 3px;
   text-align: center;
   line-height: 1.3;
@@ -117,16 +112,16 @@
 
 /* ── Live count / outs ─────────────────────────────────────── */
 .mlb-count {
-  font-size: 12px;
-  color: #cccccc;
+  font-size: 13px;
+  color: #ffffff;
   margin-bottom: 8px;
   letter-spacing: 0.5px;
 }
 
 /* ── Last game note (afternoon) ────────────────────────────── */
 .mlb-last-game {
-  font-size: 11px;
-  color: #888888;
+  font-size: 12px;
+  color: #cccccc;
   margin-bottom: 8px;
   letter-spacing: 0.3px;
 }
@@ -134,7 +129,7 @@
 /* ── Divider ───────────────────────────────────────────────── */
 .mlb-divider {
   height: 1px;
-  background: linear-gradient(to right, transparent, #333333, transparent);
+  background: linear-gradient(to right, transparent, #444444, transparent);
   margin: 6px 0 8px;
 }
 
@@ -142,14 +137,14 @@
 .mlb-insight {
   font-size: 12px;
   line-height: 1.5;
-  color: #e0e0e0;
+  color: #ffffff;
   margin-bottom: 6px;
 }
 
 /* ── Standings bullet ──────────────────────────────────────── */
 .mlb-standings-bullet {
   font-size: 11px;
-  color: #aaaaaa;
+  color: #cccccc;
   line-height: 1.4;
   margin-top: 4px;
   padding-left: 2px;
@@ -158,7 +153,7 @@
 /* ── No-game state ─────────────────────────────────────────── */
 .mlb-no-game {
   font-size: 12px;
-  color: #666666;
+  color: #cccccc;
   margin: 6px 0;
   font-style: italic;
 }
@@ -166,7 +161,7 @@
 /* ── Rate limit notice ─────────────────────────────────────── */
 .mlb-rate-notice {
   font-size: 9px;
-  color: #555555;
+  color: #777777;           /* intentionally receded — status detail */
   margin-top: 8px;
   letter-spacing: 0.5px;
 }
@@ -174,12 +169,12 @@
 /* ── Loading / error states ────────────────────────────────── */
 .mlb-loading {
   font-size: 12px;
-  color: #555555;
+  color: #cccccc;
   font-style: italic;
 }
 
 .mlb-error {
   font-size: 11px;
-  color: #cc4444;
+  color: #ff6666;
   line-height: 1.4;
 }
