@@ -82,6 +82,13 @@ async function fetchBoxScore(gamePk) {
   return res.json();
 }
 
+async function fetchLinescore(gamePk) {
+  const url = `${MLB_API}/game/${gamePk}/linescore`;
+  const res = await fetchFn(url);
+  if (!res.ok) throw new Error(`Linescore fetch failed: ${res.status}`);
+  return res.json();
+}
+
 async function fetchStandings() {
   const season = new Date().getFullYear();
   const url = `${MLB_API}/standings?leagueId=103,104&season=${season}&hydrate=team`;
@@ -116,6 +123,7 @@ function extractGameData(scheduleData) {
   const away = game.teams.away;
   const home = game.teams.home;
   const isFinal = game.status.abstractGameState === "Final";
+  const isLive = game.status.abstractGameState === "Live";
   return {
     gamePk: game.gamePk,
     awayTeamId: away.team.id,
@@ -129,9 +137,24 @@ function extractGameData(scheduleData) {
     homeScore: home.score,
     homeWin: home.isWinner,
     final: isFinal,
-    status: isFinal ? "FINAL" : game.status.detailedState,
+    isLive,
+    status: isFinal ? "FINAL" : isLive ? "LIVE" : game.status.detailedState,
     gameTime: formatLocalTime(game.gameDate),
+    gameDate: dates[0].date,
     venue: game.venue?.name || null,
+  };
+}
+
+function extractLiveState(linescore) {
+  return {
+    awayScore: linescore.teams?.away?.runs ?? 0,
+    homeScore: linescore.teams?.home?.runs ?? 0,
+    inning: linescore.currentInning || 1,
+    inningOrdinal: linescore.currentInningOrdinal || "1st",
+    isTopInning: linescore.isTopInning !== false,
+    balls: linescore.balls ?? 0,
+    strikes: linescore.strikes ?? 0,
+    outs: linescore.outs ?? 0,
   };
 }
 
@@ -139,7 +162,8 @@ function extractNextGame(scheduleData) {
   const allDates = scheduleData.dates || [];
   for (const dateEntry of allDates) {
     for (const game of (dateEntry.games || [])) {
-      if (game.status.abstractGameState !== "Final") {
+      const state = game.status.abstractGameState;
+      if (state !== "Final" && state !== "Live") {
         const away = game.teams.away;
         const home = game.teams.home;
         return {
@@ -284,19 +308,26 @@ async function callClaude(apiKey, prompt) {
   }
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 async function getInsight(config, isBeforeNoon, gameData, lastGameData, boxSummary, transactions, standingsChanges, cache) {
   const todayStr = today();
-
-  // Check daily limit
-  const usageDate = cache.usageDate || "";
-  const usageCount = usageDate === todayStr ? (cache.usageCount || 0) : 0;
   const maxRequests = config.maxDailyRequests || 4;
 
-  if (usageCount >= maxRequests) {
+  // Daily count (resets each calendar day)
+  const usageDate = cache.usageDate || "";
+  const usageCount = usageDate === todayStr ? (cache.usageCount || 0) : 0;
+
+  // Time-based throttle: spread calls evenly across 24h regardless of updateInterval
+  const minInterval = DAY_MS / maxRequests;
+  const timeSinceLast = Date.now() - (cache.lastAiCallTime || 0);
+  const tooSoon = timeSinceLast < minInterval;
+
+  if (usageCount >= maxRequests || tooSoon) {
     return {
       insight: cache.lastInsight || null,
       standingsBullet: cache.lastStandingsBullet || null,
-      rateLimited: true,
+      rateLimited: usageCount >= maxRequests,
       usageCount,
       usageDate: todayStr,
     };
@@ -355,6 +386,7 @@ Based on the above, respond in JSON only (no markdown fences, no extra text):
       rateLimited: false,
       usageCount: usageCount + 1,
       usageDate: todayStr,
+      lastAiCallTime: Date.now(),
     };
   } catch (err) {
     console.error("MMM-MLB: Claude API error:", err.message);
@@ -377,6 +409,18 @@ module.exports = NodeHelper.create({
   },
 
   async socketNotificationReceived(notification, payload) {
+    if (notification === "MMM_MLB_FETCH_LIVE") {
+      // Lightweight live update — linescore only, no AI
+      try {
+        const linescore = await fetchLinescore(payload.gamePk);
+        const liveState = extractLiveState(linescore);
+        this.sendSocketNotification("MMM_MLB_LIVE", { liveState });
+      } catch (err) {
+        console.warn("MMM-MLB live update failed:", err.message);
+      }
+      return;
+    }
+
     if (notification !== "MMM_MLB_FETCH") return;
     const { config } = payload;
 
@@ -399,11 +443,31 @@ module.exports = NodeHelper.create({
     const cache = loadCache();
 
     // ── Fetch game data ──────────────────────────────────
-    let gameData = null;      // upcoming game (afternoon) or yesterday's result (morning)
-    let lastGameData = null;  // yesterday's result for afternoon "Last Game" note + AI context
+    let gameData = null;
+    let lastGameData = null;
+    let liveState = null;
     let boxSummary = "No game data.";
 
-    if (isBeforeNoon) {
+    // Check for a live game first — overrides time-of-day logic
+    const todayData = await fetchSchedule(today(), config.favoriteTeam);
+    const todayGame = extractGameData(todayData);
+
+    if (todayGame && todayGame.isLive) {
+      gameData = todayGame;
+      try {
+        const linescore = await fetchLinescore(todayGame.gamePk);
+        liveState = extractLiveState(linescore);
+        gameData.awayScore = liveState.awayScore;
+        gameData.homeScore = liveState.homeScore;
+      } catch (err) {
+        console.warn("MMM-MLB: linescore fetch failed:", err.message);
+      }
+      // Fetch yesterday for AI context (non-blocking)
+      try {
+        const yestData = await fetchSchedule(yesterday(), config.favoriteTeam);
+        lastGameData = extractGameData(yestData);
+      } catch {}
+    } else if (isBeforeNoon) {
       const schedData = await fetchSchedule(yesterday(), config.favoriteTeam);
       gameData = extractGameData(schedData);
       if (gameData && gameData.gamePk) {
@@ -415,7 +479,7 @@ module.exports = NodeHelper.create({
         }
       }
     } else {
-      // Fetch upcoming game and yesterday's result in parallel
+      // Afternoon: upcoming game + yesterday's result in parallel
       const [futureData, yestData] = await Promise.all([
         fetchFutureSchedule(config.favoriteTeam),
         fetchSchedule(yesterday(), config.favoriteTeam),
@@ -455,6 +519,7 @@ module.exports = NodeHelper.create({
     const newCache = {
       usageDate: insightResult.usageDate,
       usageCount: insightResult.usageCount,
+      lastAiCallTime: insightResult.lastAiCallTime || cache.lastAiCallTime,
       lastInsight: insightResult.insight || cache.lastInsight,
       lastStandingsBullet: insightResult.standingsBullet || cache.lastStandingsBullet,
       previousStandings: currentStandings || cache.previousStandings,
@@ -465,6 +530,7 @@ module.exports = NodeHelper.create({
     this.sendSocketNotification("MMM_MLB_DATA", {
       isBeforeNoon,
       gameData,
+      liveState,
       lastGameData,
       insight: insightResult.insight,
       standingsBullet: insightResult.standingsBullet,

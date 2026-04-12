@@ -4,9 +4,11 @@ Module.register("MMM-MLB", {
   defaults: {
     favoriteTeam: 147,           // MLB team ID (147 = Yankees; see README for all IDs)
     anthropicApiKey: "",         // Your Anthropic API key
-    maxDailyRequests: 4,         // Max Claude API calls per calendar day
-    updateInterval: 30 * 60 * 1000,   // Data refresh interval (30 min)
+    maxDailyRequests: 4,         // Max Claude API calls per calendar day (auto-throttled)
+    updateInterval: 30 * 60 * 1000,   // Full data refresh interval (30 min)
+    liveRefreshInterval: 30 * 1000,   // Live game score/count polling (30 sec)
     noonCheckInterval: 60 * 1000,     // How often to check for noon crossover (1 min)
+    moduleWidth: 270,                 // Width in pixels — set to match your column
   },
 
   start() {
@@ -14,6 +16,8 @@ Module.register("MMM-MLB", {
     this.displayData = null;
     this.error = null;
     this.lastNoonState = null;
+    this.liveInterval = null;
+    this.liveGamePk = null;
 
     this.fetchData();
     setInterval(() => this.fetchData(), this.config.updateInterval);
@@ -37,7 +41,22 @@ Module.register("MMM-MLB", {
       this.displayData = payload;
       this.error = null;
       this.loaded = true;
+      if (payload.gameData && payload.gameData.isLive) {
+        this.startLivePolling(payload.gameData.gamePk);
+      } else {
+        this.stopLivePolling();
+      }
       this.updateDom(300);
+    } else if (notification === "MMM_MLB_LIVE") {
+      if (this.displayData) {
+        this.displayData.liveState = payload.liveState;
+        // Mirror scores into gameData for buildTeamCol
+        if (this.displayData.gameData && payload.liveState) {
+          this.displayData.gameData.awayScore = payload.liveState.awayScore;
+          this.displayData.gameData.homeScore = payload.liveState.homeScore;
+        }
+        this.updateDom(0);
+      }
     } else if (notification === "MMM_MLB_ERROR") {
       this.error = payload.error;
       this.loaded = true;
@@ -45,10 +64,27 @@ Module.register("MMM-MLB", {
     }
   },
 
+  startLivePolling(gamePk) {
+    if (this.liveGamePk === gamePk && this.liveInterval) return;
+    this.stopLivePolling();
+    this.liveGamePk = gamePk;
+    this.liveInterval = setInterval(() => {
+      this.sendSocketNotification("MMM_MLB_FETCH_LIVE", { gamePk });
+    }, this.config.liveRefreshInterval);
+  },
+
+  stopLivePolling() {
+    if (this.liveInterval) {
+      clearInterval(this.liveInterval);
+      this.liveInterval = null;
+    }
+    this.liveGamePk = null;
+  },
+
   getDom() {
     const wrapper = document.createElement("div");
     wrapper.className = "MMM-MLB";
-    wrapper.style.cssText = "width:100%;overflow:hidden;position:relative;";
+    wrapper.style.cssText = `width:${this.config.moduleWidth}px;overflow:hidden;position:relative;`;
 
     if (!this.loaded) {
       const loading = document.createElement("div");
@@ -71,7 +107,9 @@ Module.register("MMM-MLB", {
     // ── Section label ──────────────────────────────────────
     const label = document.createElement("div");
     label.className = "mlb-label";
-    label.textContent = d.isBeforeNoon ? "YESTERDAY" : "UPCOMING";
+    const isLive = d.gameData && d.gameData.isLive;
+    label.textContent = isLive ? "● LIVE" : (d.isBeforeNoon ? "YESTERDAY" : "UPCOMING");
+    if (isLive) label.style.color = "#e03030";
     wrapper.appendChild(label);
 
     // ── Game card ──────────────────────────────────────────
@@ -80,23 +118,30 @@ Module.register("MMM-MLB", {
       card.className = "mlb-game-card";
       card.style.cssText = "display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%;overflow:hidden;margin-bottom:10px;";
 
+      const showScore = d.gameData.final || isLive;
       // Away team column
       card.appendChild(this.buildTeamCol(
         d.gameData.awayTeamId,
         d.gameData.awayTeamAbbr,
-        d.isBeforeNoon && d.gameData.final ? d.gameData.awayScore : null,
+        showScore ? d.gameData.awayScore : null,
         d.gameData.awayWin
       ));
 
-      // Centre column — score divider or game time
+      // Centre column
       const centre = document.createElement("div");
       centre.className = "mlb-centre";
-      if (d.isBeforeNoon && d.gameData.final) {
+      if (isLive && d.liveState) {
+        const half = d.liveState.isTopInning ? "TOP" : "BOT";
+        const inningEl = document.createElement("div");
+        inningEl.className = "mlb-gametime";
+        inningEl.textContent = `${half} ${d.liveState.inningOrdinal}`;
+        centre.appendChild(inningEl);
+      } else if (d.gameData.final) {
         const statusEl = document.createElement("div");
         statusEl.className = "mlb-status";
-        statusEl.textContent = d.gameData.status || "FINAL";
+        statusEl.textContent = "FINAL";
         centre.appendChild(statusEl);
-      } else if (!d.isBeforeNoon) {
+      } else {
         const timeEl = document.createElement("div");
         timeEl.className = "mlb-gametime";
         timeEl.textContent = d.gameData.gameTime || "TBD";
@@ -107,11 +152,6 @@ Module.register("MMM-MLB", {
           venueEl.textContent = d.gameData.venue;
           centre.appendChild(venueEl);
         }
-      } else {
-        const statusEl = document.createElement("div");
-        statusEl.className = "mlb-status";
-        statusEl.textContent = d.gameData.status || "";
-        centre.appendChild(statusEl);
       }
       card.appendChild(centre);
 
@@ -119,7 +159,7 @@ Module.register("MMM-MLB", {
       card.appendChild(this.buildTeamCol(
         d.gameData.homeTeamId,
         d.gameData.homeTeamAbbr,
-        d.isBeforeNoon && d.gameData.final ? d.gameData.homeScore : null,
+        showScore ? d.gameData.homeScore : null,
         d.gameData.homeWin
       ));
 
@@ -131,6 +171,16 @@ Module.register("MMM-MLB", {
         ? "No game yesterday"
         : "No upcoming game scheduled";
       wrapper.appendChild(noGame);
+    }
+
+    // ── Live count / outs row ──────────────────────────────
+    if (isLive && d.liveState) {
+      const ls = d.liveState;
+      const countEl = document.createElement("div");
+      countEl.className = "mlb-count";
+      const outsLabel = ls.outs === 1 ? "1 out" : `${ls.outs} outs`;
+      countEl.textContent = `${ls.balls}–${ls.strikes} count  ·  ${outsLabel}`;
+      wrapper.appendChild(countEl);
     }
 
     // ── Last game note (afternoon only) ───────────────────

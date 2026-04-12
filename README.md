@@ -32,12 +32,14 @@ Add to your `config/config.js`:
 ```js
 {
   module: "MMM-MLB",
-  position: "top_left",
+  position: "top_right",
   config: {
     favoriteTeam: 147,          // MLB team ID (see table below)
     anthropicApiKey: "sk-ant-...",
-    maxDailyRequests: 4,        // Max Claude API calls per day (cost control)
-    updateInterval: 1800000,    // Data refresh in ms (default: 30 min)
+    maxDailyRequests: 4,        // Max Claude API calls per day (auto-throttled)
+    updateInterval: 1800000,    // Full data refresh in ms (default: 30 min)
+    liveRefreshInterval: 30000, // Live game polling in ms (default: 30 sec)
+    moduleWidth: 270,           // Width in px — match to your MagicMirror column width
   }
 }
 ```
@@ -48,8 +50,10 @@ Add to your `config/config.js`:
 |---|---|---|
 | `favoriteTeam` | `147` | MLB team ID |
 | `anthropicApiKey` | `""` | Your Anthropic API key (required) |
-| `maxDailyRequests` | `4` | Max Claude calls per calendar day. Cached insight is shown once limit is reached. |
-| `updateInterval` | `1800000` | How often to refresh data (ms). |
+| `maxDailyRequests` | `4` | Max Claude calls per calendar day. Calls are automatically spread evenly across 24h so they aren't burned in the first few refreshes. |
+| `updateInterval` | `1800000` | Full data refresh interval (ms). |
+| `liveRefreshInterval` | `30000` | How often to poll score/count/outs during a live game (ms). Does not trigger AI. |
+| `moduleWidth` | `270` | Module width in pixels. Set this to match your MagicMirror column. |
 
 ### Team IDs
 
