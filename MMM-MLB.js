@@ -188,6 +188,6 @@ Module.register("MMM-MLB", {
   },
 
   getStyles() {
-    return ["MMM-MLB.css"];
+    return ["css/MMM-MLB.css"];
   },
 });

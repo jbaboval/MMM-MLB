@@ -4,8 +4,11 @@
 .MMM-MLB {
   font-family: inherit;
   color: #ffffff;
-  max-width: 280px;
+  width: 260px;
+  max-width: 260px;
   padding: 6px 0;
+  overflow: hidden;         /* prevent any child from bleeding out */
+  position: relative;       /* establish stacking context */
 }
 
 /* ── Section label ─────────────────────────────────────────── */
@@ -26,6 +29,8 @@
   justify-content: space-between;
   margin-bottom: 10px;
   gap: 4px;
+  overflow: hidden;         /* contain logos within the card */
+  width: 100%;
 }
 
 /* ── Team column ───────────────────────────────────────────── */
@@ -34,7 +39,10 @@
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-width: 72px;
+  width: 80px;
+  min-width: 80px;
+  max-width: 80px;
+  overflow: hidden;         /* hard stop on logo growth */
   opacity: 0.7;
   transition: opacity 0.3s;
 }
@@ -44,9 +52,13 @@
 }
 
 .mlb-logo {
-  width: 52px;
-  height: 52px;
+  display: block;
+  width: 52px !important;
+  height: 52px !important;
+  max-width: 52px !important;
+  max-height: 52px !important;
   object-fit: contain;
+  flex-shrink: 0;
   /* Logos render in full colour; drop-shadow adds subtle depth */
   filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
 }
