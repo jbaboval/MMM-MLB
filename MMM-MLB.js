@@ -48,6 +48,7 @@ Module.register("MMM-MLB", {
   getDom() {
     const wrapper = document.createElement("div");
     wrapper.className = "MMM-MLB";
+    wrapper.style.cssText = "width:260px;max-width:260px;overflow:hidden;position:relative;";
 
     if (!this.loaded) {
       const loading = document.createElement("div");
@@ -77,6 +78,7 @@ Module.register("MMM-MLB", {
     if (d.gameData) {
       const card = document.createElement("div");
       card.className = "mlb-game-card";
+      card.style.cssText = "display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%;overflow:hidden;margin-bottom:10px;";
 
       // Away team column
       card.appendChild(this.buildTeamCol(
@@ -165,9 +167,14 @@ Module.register("MMM-MLB", {
   buildTeamCol(teamId, abbr, score, isWinner) {
     const col = document.createElement("div");
     col.className = "mlb-team-col" + (isWinner ? " mlb-winner" : "");
+    col.style.cssText = "display:flex;flex-direction:column;align-items:center;width:80px;max-width:80px;overflow:hidden;gap:4px;opacity:" + (isWinner ? "1" : "0.7") + ";";
 
     const logo = document.createElement("img");
     logo.className = "mlb-logo";
+    // Set HTML attributes — these take effect before CSS loads and cannot be overridden by SVG intrinsic size
+    logo.setAttribute("width", "52");
+    logo.setAttribute("height", "52");
+    logo.style.cssText = "display:block;width:52px;height:52px;max-width:52px;max-height:52px;object-fit:contain;flex-shrink:0;";
     logo.src = `https://www.mlbstatic.com/team-logos/${teamId}.svg`;
     logo.alt = abbr;
     col.appendChild(logo);
