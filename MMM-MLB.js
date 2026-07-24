@@ -108,7 +108,11 @@ Module.register("MMM-MLB", {
     const label = document.createElement("div");
     label.className = "mlb-label";
     const isLive = d.gameData && d.gameData.isLive;
-    label.textContent = isLive ? "● LIVE" : (d.isBeforeNoon ? "YESTERDAY" : "UPCOMING");
+    let labelText = isLive ? "● LIVE" : (d.isBeforeNoon ? "YESTERDAY" : "UPCOMING");
+    if (d.gameData && d.gameData.doubleHeader) {
+      labelText += `  ·  GAME ${d.gameData.gameNumber} OF 2`;
+    }
+    label.textContent = labelText;
     if (isLive) label.style.color = "#e03030";
     wrapper.appendChild(label);
 
@@ -188,7 +192,8 @@ Module.register("MMM-MLB", {
       const lg = d.lastGameData;
       const lgEl = document.createElement("div");
       lgEl.className = "mlb-last-game";
-      lgEl.textContent = `Last Game: ${lg.awayTeamAbbr} ${lg.awayScore} – ${lg.homeTeamAbbr} ${lg.homeScore}`;
+      const dhSuffix = lg.doubleHeader ? ` (G${lg.gameNumber})` : "";
+      lgEl.textContent = `Last Game${dhSuffix}: ${lg.awayTeamAbbr} ${lg.awayScore} – ${lg.homeTeamAbbr} ${lg.homeScore}`;
       wrapper.appendChild(lgEl);
     }
 
@@ -226,7 +231,8 @@ Module.register("MMM-MLB", {
   buildTeamCol(teamId, abbr, score, isWinner) {
     const col = document.createElement("div");
     col.className = "mlb-team-col" + (isWinner ? " mlb-winner" : "");
-    col.style.cssText = "display:flex;flex-direction:column;align-items:center;width:80px;max-width:80px;overflow:hidden;gap:4px;opacity:" + (isWinner ? "1" : "0.7") + ";";
+    // Layout only — opacity handled by CSS so it can be tuned in one place
+    col.style.cssText = "display:flex;flex-direction:column;align-items:center;width:80px;max-width:80px;overflow:hidden;gap:4px;";
 
     const logo = document.createElement("img");
     logo.className = "mlb-logo";
