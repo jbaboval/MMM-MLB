@@ -330,6 +330,13 @@ function favoriteResult(gd, favTeamId) {
   return null;
 }
 
+function truncateWords(text, maxWords) {
+  if (!text) return text || null;
+  const words = text.trim().split(/\s+/);
+  if (words.length <= maxWords) return text.trim();
+  return words.slice(0, maxWords).join(" ") + "…";
+}
+
 async function callClaude(apiKey, systemPrompt, userPrompt) {
   const client = new Anthropic({ apiKey });
   const response = await client.messages.create({
@@ -420,16 +427,16 @@ async function getInsight(ctx, cache) {
 
 Respond in JSON only (no markdown fences, no extra text):
 {
-  "item_of_interest": "<2–3 sentences of ACTUAL analysis grounded in the specific game data above. Reference concrete plays, innings, or player moments — not generic 'clutch performance' or 'gritty win' filler. If ${fav.name} won, celebrate the specific thing that won it. If they lost, name what actually went wrong. If the game's in progress, react to the current situation. Skip cliches entirely.>",
+  "item_of_interest": "<2–3 sentences of ACTUAL analysis grounded in the specific game data above, MAX 130 WORDS TOTAL — this must fit on a small screen without being cut off, so stay well under the limit rather than right at it. Reference concrete plays, innings, or player moments — not generic 'clutch performance' or 'gritty win' filler. If ${fav.name} won, celebrate the specific thing that won it. If they lost, name what actually went wrong. If the game's in progress, react to the current situation. Skip cliches entirely.>",
   "standings_note": "<one sentence about a notable standings shift affecting ${fav.name} or the postseason picture, or null if nothing worth mentioning>"
 }`;
 
-  const systemPrompt = `You are writing for a passionate ${fav.name} fan — someone who watches most games and cares about the details. Write with a fan's perspective: celebrate ${fav.name} wins with real emotion, feel losses honestly (but don't whine or blame umpires), and pay closer attention to what ${fav.name} players did specifically. You know baseball deeply — strategy, sequencing, leverage, situational context — and you write ABOUT the actual game, not generic recaps. Ban these words/phrases entirely: "clutch", "gritty", "big win", "tough loss", "grind it out", "battled hard". Every sentence should contain a specific detail from the data provided.`;
+  const systemPrompt = `You are writing for a passionate ${fav.name} fan — someone who watches most games and cares about the details. Write with a fan's perspective: celebrate ${fav.name} wins with real emotion, feel losses honestly (but don't whine or blame umpires), and pay closer attention to what ${fav.name} players did specifically. You know baseball deeply — strategy, sequencing, leverage, situational context — and you write ABOUT the actual game, not generic recaps. Keep the item_of_interest to 130 words or fewer — it's displayed on a small screen and gets cut off if it runs long. Ban these words/phrases entirely: "clutch", "gritty", "big win", "tough loss", "grind it out", "battled hard". Every sentence should contain a specific detail from the data provided.`;
 
   try {
     const result = await callClaude(config.anthropicApiKey, systemPrompt, userPrompt);
     return {
-      insight: result.item_of_interest || null,
+      insight: truncateWords(result.item_of_interest, 130),
       standingsBullet: result.standings_note || null,
       rateLimited: false,
       usageCount: usageCount + 1,
