@@ -9,6 +9,9 @@ Module.register("MMM-MLB", {
     liveRefreshInterval: 30 * 1000,   // Live game score/count polling (30 sec)
     noonCheckInterval: 60 * 1000,     // How often to check for noon crossover (1 min)
     moduleWidth: 270,                 // Width in pixels — set to match your column
+    webSearch: true,                  // Offseason: let Claude web-search for trade/signing rumors
+    offseasonDailyRequests: 2,        // Offseason cap on Claude calls (each one runs web searches)
+    debugPrompts: false,              // Log the full prompt sent to Claude (server log)
   },
 
   start() {
@@ -108,16 +111,25 @@ Module.register("MMM-MLB", {
     const label = document.createElement("div");
     label.className = "mlb-label";
     const isLive = d.gameData && d.gameData.isLive;
-    let labelText = isLive ? "● LIVE" : (d.isBeforeNoon ? "YESTERDAY" : "UPCOMING");
-    if (d.gameData && d.gameData.doubleHeader) {
-      labelText += `  ·  GAME ${d.gameData.gameNumber} OF 2`;
+    const isOffseason = d.phase === "offseason";
+    let labelText;
+    if (isOffseason) {
+      labelText = d.headline || "OFFSEASON";
+    } else {
+      labelText = isLive ? "● LIVE" : this.dayLabel(d.gameData, d.isBeforeNoon);
+      if (d.headline) labelText += `  ·  ${d.headline}`;
+      if (d.gameData && d.gameData.doubleHeader) {
+        labelText += `  ·  GAME ${d.gameData.gameNumber} OF 2`;
+      }
     }
     label.textContent = labelText;
     if (isLive) label.style.color = "#e03030";
     wrapper.appendChild(label);
 
     // ── Game card ──────────────────────────────────────────
-    if (d.gameData) {
+    if (isOffseason) {
+      // No game card in the offseason — the context line and insight carry it
+    } else if (d.gameData) {
       const card = document.createElement("div");
       card.className = "mlb-game-card";
       card.style.cssText = "display:flex;flex-direction:row;align-items:center;justify-content:space-between;width:100%;overflow:hidden;margin-bottom:10px;";
@@ -177,6 +189,14 @@ Module.register("MMM-MLB", {
       wrapper.appendChild(noGame);
     }
 
+    // ── Context line (series status / champion + spring countdown) ──
+    if (d.contextLine) {
+      const ctxEl = document.createElement("div");
+      ctxEl.className = "mlb-context-line";
+      ctxEl.textContent = d.contextLine;
+      wrapper.appendChild(ctxEl);
+    }
+
     // ── Live count / outs row ──────────────────────────────
     if (isLive && d.liveState) {
       const ls = d.liveState;
@@ -226,6 +246,25 @@ Module.register("MMM-MLB", {
     }
 
     return wrapper;
+  },
+
+  // "YESTERDAY" / "LAST GAME" for finals; "TODAY" / "TOMORROW" / "FRI 10/23" for upcoming
+  dayLabel(gameData, isBeforeNoon) {
+    if (!gameData || !gameData.gameDate) return isBeforeNoon ? "YESTERDAY" : "UPCOMING";
+    const ymd = (offset) => {
+      const dt = new Date();
+      dt.setDate(dt.getDate() + offset);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    };
+    if (gameData.final) {
+      if (gameData.gameDate === ymd(0)) return "TODAY";
+      return gameData.gameDate === ymd(-1) ? "YESTERDAY" : "LAST GAME";
+    }
+    if (gameData.gameDate === ymd(0)) return "TODAY";
+    if (gameData.gameDate === ymd(1)) return "TOMORROW";
+    const [y, m, day] = gameData.gameDate.split("-").map(Number);
+    const weekday = new Date(y, m - 1, day).toLocaleDateString([], { weekday: "short" }).toUpperCase();
+    return `${weekday} ${m}/${day}`;
   },
 
   buildTeamCol(teamId, abbr, score, isWinner) {
