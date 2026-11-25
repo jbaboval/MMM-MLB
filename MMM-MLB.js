@@ -4,13 +4,13 @@ Module.register("MMM-MLB", {
   defaults: {
     favoriteTeam: 147,           // MLB team ID (147 = Yankees; see README for all IDs)
     anthropicApiKey: "",         // Your Anthropic API key
-    maxDailyRequests: 4,         // Max Claude API calls per calendar day (auto-throttled)
+    aiUpdateTimes: ["06:00", "16:30"], // Local times a fresh Claude insight is generated
+    maxDailyRequests: 2,         // Hard cap on Claude API calls per calendar day (failed calls count)
     updateInterval: 30 * 60 * 1000,   // Full data refresh interval (30 min)
     liveRefreshInterval: 30 * 1000,   // Live game score/count polling (30 sec)
     noonCheckInterval: 60 * 1000,     // How often to check for noon crossover (1 min)
     moduleWidth: 270,                 // Width in pixels — set to match your column
     webSearch: true,                  // Offseason: let Claude web-search for trade/signing rumors
-    offseasonDailyRequests: 2,        // Offseason cap on Claude calls (each one runs web searches)
     debugPrompts: false,              // Log the full prompt sent to Claude (server log)
   },
 

@@ -46,7 +46,8 @@ Add to your `config/config.js`:
   config: {
     favoriteTeam: 147,          // MLB team ID (see table below)
     anthropicApiKey: "sk-ant-...",
-    maxDailyRequests: 4,        // Max Claude API calls per day (auto-throttled)
+    aiUpdateTimes: ["06:00", "16:30"], // When fresh Claude insights are generated
+    maxDailyRequests: 2,        // Hard cap on Claude API calls per day
     updateInterval: 1800000,    // Full data refresh in ms (default: 30 min)
     liveRefreshInterval: 30000, // Live game polling in ms (default: 30 sec)
     moduleWidth: 270,           // Width in px — match to your MagicMirror column width
@@ -60,12 +61,13 @@ Add to your `config/config.js`:
 |---|---|---|
 | `favoriteTeam` | `147` | MLB team ID |
 | `anthropicApiKey` | `""` | Your Anthropic API key (required) |
-| `maxDailyRequests` | `4` | Max Claude calls per calendar day. Calls are automatically spread evenly across 24h so they aren't burned in the first few refreshes. |
-| `updateInterval` | `1800000` | Full data refresh interval (ms). |
+| `aiUpdateTimes` | `["06:00", "16:30"]` | Local times when a fresh Claude insight is generated. Between them the module shows the last insight; scores, standings and the live game view still refresh on `updateInterval`. |
+| `maxDailyRequests` | `2` | Hard cap on Claude calls per calendar day. Failed calls count toward it. |
+| `updateInterval` | `1800000` | Full data refresh interval (ms). Does not call Claude unless an `aiUpdateTimes` slot is due. |
 | `liveRefreshInterval` | `30000` | How often to poll score/count/outs during a live game (ms). Does not trigger AI. |
 | `moduleWidth` | `270` | Module width in pixels. Set this to match your MagicMirror column. |
 | `webSearch` | `true` | In the offseason, let Claude search the web for trade and signing rumors. Requires web search to be enabled for your organization in the Claude Console. Set `false` to use official transactions only. |
-| `offseasonDailyRequests` | `2` | Daily Claude call cap during the offseason (each call runs up to 4 web searches). |
+| `offseasonDailyRequests` | — | Optional lower daily cap for the offseason (each offseason call runs up to 4 web searches). |
 | `debugPrompts` | `false` | Log the full prompt sent to Claude in the MagicMirror server log. |
 
 ### Team IDs
@@ -97,17 +99,20 @@ Add to your `config/config.js`:
 
 ## Cost control
 
-The `maxDailyRequests` setting caps daily Claude API calls. Once the limit is reached, the module continues displaying the most recently generated insight without making new API calls. The counter resets each calendar day. A small notice is shown at the bottom when the limit is active. When the situation changes (e.g. your team is eliminated, or the World Series ends), the next refresh makes a fresh call right away instead of waiting out the throttle interval.
+Claude is called once per `aiUpdateTimes` slot (twice a day by default: a morning recap and an evening preview), never more than `maxDailyRequests` times per calendar day. A failed call uses up its slot and counts toward the cap — the module keeps showing the last insight until the next slot rather than retrying every refresh. When the situation changes (e.g. your team is eliminated, or the World Series ends), the next refresh makes a fresh call right away instead of waiting for the next slot, still within the daily cap. If several browsers are showing the mirror, only one refresh runs at a time, so they can't trigger duplicate calls.
 
-Offseason calls with web search cost more (search fees plus the search results as input tokens), which is why `offseasonDailyRequests` defaults to 2.
+Offseason calls with web search cost more (search fees plus the search results as input tokens). Set `offseasonDailyRequests: 1` for one offseason update a day.
 
-With 4 calls/day at typical prompt sizes (~1K input tokens, ~100 output tokens), monthly cost is roughly **$0.30–$0.60** depending on usage.
+## Variety
+
+The last four insights are stored in the cache and included in each prompt with an instruction not to repeat them. In the offseason, each update also gets a different suggested topic (free-agent targets, trade fits, roster holes, arbitration decisions, prospects, rival moves, the market, payroll), and last season's ending is passed only as a one-line background note so the insight doesn't keep recapping the playoff exit.
 
 ## Cache file
 
 A `.mlb-cache.json` file is stored in the module directory. It holds:
 - Daily usage counter
 - Last generated insight (fallback when rate-limited)
+- The last four insights and the offseason topic rotation (for variety)
 - Previous day's standings (for change detection)
 
 This file is listed in `.gitignore`.

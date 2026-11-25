@@ -606,7 +606,37 @@ async function callClaude(apiKey, systemPrompt, userPrompt, { webSearch = false 
   }
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+// Local clock times ("HH:MM") when a fresh Claude insight is due
+const DEFAULT_UPDATE_TIMES = ["06:00", "16:30"];
+
+// Most recent of TODAY's scheduled update times at or before now (ms since epoch),
+// 0 if none has passed yet. Yesterday's slots are deliberately ignored: a slot missed
+// because of the daily cap would otherwise fire just after midnight, every night.
+function lastScheduledSlot(times) {
+  const now = new Date();
+  let best = 0;
+  for (const t of Array.isArray(times) && times.length ? times : DEFAULT_UPDATE_TIMES) {
+    const [h, m = 0] = String(t).split(":").map(Number);
+    if (!(h >= 0 && h < 24 && m >= 0 && m < 60)) continue;
+    const d = new Date(now);
+    d.setHours(h, m, 0, 0);
+    if (d <= now && d.getTime() > best) best = d.getTime();
+  }
+  return best;
+}
+
+// Offseason topics, rotated one per update so the hot-stove item doesn't keep
+// circling back to the same story.
+const OFFSEASON_ANGLES = [
+  fav => `a specific free agent the ${fav} are linked to (or should be), and how he'd fit`,
+  fav => `a trade rumor or trade fit — who the ${fav} could get and what it would cost them`,
+  fav => `the biggest hole on the ${fav} roster (name the position) and the realistic options to fill it`,
+  fav => `a ${fav} player facing a decision — arbitration, non-tender, an option, or extension talks`,
+  fav => `a ${fav} prospect who could win a job or be traded, with concrete numbers`,
+  fav => `a move by a ${fav} division rival and what it means for the ${fav}`,
+  fav => `a market-setting deal elsewhere and what it means for players the ${fav} want`,
+  fav => `the ${fav} payroll / luxury-tax picture, coaching staff, or front-office changes`,
+];
 
 const BANNED_PHRASES = `Ban these words/phrases entirely: "clutch", "gritty", "big win", "tough loss", "grind it out", "battled hard".`;
 
@@ -665,18 +695,23 @@ function buildPrompts(ctx) {
 
   if (phase === "offseason") {
     webSearch = ctx.webSearch;
-    if (post?.champion) sections.push(`${post.champion.name} won the ${ctx.refSeason} World Series.`);
-    if (seasonEnd) sections.push(seasonEnd);
+    // How last season ended is background only — the full series detail made every
+    // offseason insight re-tell the playoff exit.
+    const background = [
+      post?.champion ? `${post.champion.name} won the ${ctx.refSeason} World Series.` : null,
+      seasonEnd,
+    ].filter(Boolean).join(" ");
+    if (background) sections.push(`Background only — the fan already knows this; do NOT recap it: ${background}`);
     if (nextSpring) sections.push(`Spring training opens ${formatShortDate(nextSpring)} (${daysUntil(nextSpring)} days away).`);
     sections.push(transactions
       ? `Completed ${favName} transactions (last 30 days, official):\n${transactions}`
       : `No significant official ${favName} transactions in the last 30 days.`);
     if (leagueTransactions) sections.push(`Notable league-wide moves (last 7 days, official):\n${leagueTransactions}`);
-    if (standingsContext) sections.push(standingsContext);
+    if (ctx.angle) sections.push(`Suggested focus for this update: ${ctx.angle}. Go with it if the data${webSearch ? " or your searches" : ""} turn up something real; otherwise pick a different fresh topic.`);
 
-    systemPrompt = `${baseSystem} It's the MLB offseason — the conversation is the hot stove: trades, free-agent signings, contract decisions, and the rumors around them. Lead with ${favName} news. Treat the official transactions in the data as fact. ${webSearch ? `Use web search to find credible ${favName} trade and free-agent rumors and reporting from roughly the last two weeks (beat writers, national insiders). Attribute every rumor to its reporter or outlet, and make the done-deal vs. rumor distinction unmistakable ("reportedly", "per ..."). Never invent or embellish a rumor — if searching turns up nothing fresh, write about the concrete roster questions facing ${favName} instead.` : `You have no rumor feed — stick to official moves and the concrete roster questions facing ${favName}.`} Do not include URLs or citation markers in the JSON.`;
-    itemSpec = `2–3 sentences on the most interesting ${favName} hot-stove item right now — a completed move and what it means, or a credible rumor and who is reporting it. MAX 130 WORDS.`;
-    noteSpec = `one sentence on the biggest league-wide move or rumor NOT involving ${favName}, or null`;
+    systemPrompt = `${baseSystem} It's the MLB offseason — the conversation is the hot stove: trades, free-agent signings, contract decisions, and the rumors around them. Lead with ${favName} news. Treat the official transactions in the data as fact. Look forward, not back: don't rehash last season, the playoff exit, or the World Series result unless a NEW move is directly about it. The display refreshes twice a day and the fan notices repetition, so each update should be about a different player, move, or question than the recent ones. ${webSearch ? `Use web search to find credible ${favName} trade and free-agent rumors and reporting from roughly the last two weeks (beat writers, national insiders). Attribute every rumor to its reporter or outlet, and make the done-deal vs. rumor distinction unmistakable ("reportedly", "per ..."). Never invent or embellish a rumor — if searching turns up nothing fresh, write about a concrete roster question facing ${favName} instead.` : `You have no rumor feed — stick to official moves and the concrete roster questions facing ${favName}.`} Do not include URLs or citation markers in the JSON.`;
+    itemSpec = `2–3 sentences on one ${favName} hot-stove item — a completed move and what it means, a credible rumor and who is reporting it, or a specific roster question and the options. MAX 130 WORDS.`;
+    noteSpec = `one sentence on a league-wide move or rumor NOT involving ${favName} (a different one from recent updates), or null`;
   } else if (phase === "postseason" && post && post.favStatus !== "alive") {
     sections.push(...buildGameSections(ctx, "No playoff game"));
     const bracket = formatBracket(post);
@@ -713,6 +748,10 @@ function buildPrompts(ctx) {
       : `one sentence about the division or wild card race as it affects ${favName} (use the standings data — games back, recent form, upcoming opponents), or null if nothing worth mentioning`;
   }
 
+  if (ctx.recentInsights?.length) {
+    sections.push(`Already shown on the display recently (newest first). Don't repeat these topics, players, or facts — if the same game or story is still the news, take a clearly different angle on it:\n${ctx.recentInsights.map(t => "- " + t).join("\n")}`);
+  }
+
   const userPrompt = sections.join("\n\n") + `
 
 Respond in JSON only (no markdown fences, no extra text):
@@ -726,30 +765,28 @@ Respond in JSON only (no markdown fences, no extra text):
 async function getInsight(ctx, cache) {
   const { config, phase } = ctx;
   const todayStr = today();
-  // Offseason news moves slower and each call runs web searches — default to fewer calls
-  const maxRequests = phase === "offseason"
-    ? Math.min(config.maxDailyRequests || 4, config.offseasonDailyRequests || 2)
-    : (config.maxDailyRequests || 4);
+  // Hard daily cap; offseasonDailyRequests can only lower it further
+  let maxRequests = config.maxDailyRequests || 2;
+  if (phase === "offseason" && config.offseasonDailyRequests) maxRequests = Math.min(maxRequests, config.offseasonDailyRequests);
 
   const usageDate = cache.usageDate || "";
   const usageCount = usageDate === todayStr ? (cache.usageCount || 0) : 0;
 
-  // A change of situation (e.g. eliminated, World Series over) skips the time
-  // throttle so the insight doesn't keep talking about the old context for hours.
-  const contextChanged = cache.lastContextKey !== ctx.contextKey;
-  const minInterval = DAY_MS / maxRequests;
-  const timeSinceLast = Date.now() - (cache.lastAiCallTime || 0);
-  const tooSoon = timeSinceLast < minInterval && !contextChanged;
-
-  if (usageCount >= maxRequests || tooSoon) {
-    return {
-      insight: cache.lastInsight || null,
-      standingsBullet: cache.lastStandingsBullet || null,
-      rateLimited: usageCount >= maxRequests,
-      usageCount, usageDate: todayStr,
-      contextKey: cache.lastContextKey,
-    };
-  }
+  // A call is due once per scheduled time (aiUpdateTimes). A change of situation
+  // (eliminated, World Series over) is also due right away so the insight doesn't
+  // talk about the old context until the next slot — still within the daily cap.
+  // With nothing cached yet (first run), don't leave the card empty until the next slot.
+  const slotDue = !cache.lastInsight || (cache.lastAiCallTime || 0) < lastScheduledSlot(config.aiUpdateTimes);
+  const contextChanged = !!cache.lastContextKey && cache.lastContextKey !== ctx.contextKey;
+  const cached = {
+    insight: cache.lastInsight || null,
+    standingsBullet: cache.lastStandingsBullet || null,
+    rateLimited: false,
+    usageCount, usageDate: todayStr,
+    contextKey: cache.lastContextKey,
+  };
+  if (!slotDue && !contextChanged) return cached;
+  if (usageCount >= maxRequests) return { ...cached, rateLimited: true };
 
   const { systemPrompt, userPrompt, webSearch } = buildPrompts(ctx);
   if (config.debugPrompts) console.log(`MMM-MLB prompt [${phase}]:\n--- system ---\n${systemPrompt}\n--- user ---\n${userPrompt}`);
@@ -757,6 +794,7 @@ async function getInsight(ctx, cache) {
   try {
     const result = await callClaude(config.anthropicApiKey, systemPrompt, userPrompt, { webSearch });
     return {
+      fresh: true,
       insight: truncateWords(result.item_of_interest, 130),
       standingsBullet: result.standings_note && result.standings_note !== "null" ? result.standings_note : null,
       rateLimited: false,
@@ -766,13 +804,15 @@ async function getInsight(ctx, cache) {
       contextKey: ctx.contextKey,
     };
   } catch (err) {
+    // A failed call still counts and still uses up its slot: some failures (a refusal,
+    // a timeout after the model ran) are billed, and retrying on every 30-minute refresh is
+    // what ran the bill up. The cached insight stays until the next scheduled time.
     console.error("MMM-MLB: Claude API error:", err.message);
     return {
-      insight: cache.lastInsight || null,
-      standingsBullet: cache.lastStandingsBullet || null,
-      rateLimited: false, error: err.message,
-      usageCount, usageDate: todayStr,
-      contextKey: cache.lastContextKey,
+      ...cached, error: err.message,
+      usageCount: usageCount + 1,
+      lastAiCallTime: Date.now(),
+      contextKey: ctx.contextKey,
     };
   }
 }
@@ -802,7 +842,8 @@ async function determinePhase() {
 }
 
 // How the favorite's season ended, for postseason/offseason prompts
-function describeSeasonEnd(favTeamId, favName, standings, post) {
+// brief: one line per fact, no game-by-game series lines (offseason background)
+function describeSeasonEnd(favTeamId, favName, standings, post, { brief = false } = {}) {
   const tr = (standings?.records || []).flatMap(r => r.teamRecords || []).find(x => x.team.id === favTeamId);
   const record = tr ? `${tr.wins}-${tr.losses}, ${divisionGamesBackText(tr)} in the ${tr.team.division?.name || "division"}` : null;
   const parts = [];
@@ -811,13 +852,15 @@ function describeSeasonEnd(favTeamId, favName, standings, post) {
     const s = post.lostSeries;
     const won = post.favSeries.filter(x => x.isOver && x.winner?.id === favTeamId).map(x => `won the ${x.name} vs ${x.teamNames.find(n => n !== favName)}`);
     if (won.length) parts.push(`${favName} ${won.join(", then ")}.`);
-    parts.push(`Eliminated in the ${s.name} by the ${s.winner?.name} (${s.result}):\n${formatSeriesGames(s)}`);
+    parts.push(brief
+      ? `Eliminated in the ${s.name} by the ${s.winner?.name}.`
+      : `Eliminated in the ${s.name} by the ${s.winner?.name} (${s.result}):\n${formatSeriesGames(s)}`);
   } else if (post?.favStatus === "missed") {
     parts.push(`${favName} missed the postseason.`);
   } else if (post?.favStatus === "alive" && post.champion?.id === favTeamId) {
     parts.push(`${favName} WON THE WORLD SERIES.`);
   }
-  return parts.length ? parts.join("\n") : null;
+  return parts.length ? parts.join(brief ? " " : "\n") : null;
 }
 
 function isPlayed(game) {
@@ -858,11 +901,16 @@ module.exports = NodeHelper.create({
         error: "MMM-MLB: anthropicApiKey not set in config.",
       });
     }
-    try { await this.fetchAndSend(config); }
-    catch (err) {
-      console.error("MMM-MLB error:", err);
-      this.sendSocketNotification("MMM_MLB_ERROR", { error: err.message });
-    }
+    // Every open browser (mirror + any remote view) sends its own fetch. Overlapping
+    // fetches would each pass the throttle before either saved the cache, so only one
+    // runs at a time; its result is broadcast to every client anyway.
+    if (this.inflight) return;
+    this.inflight = this.fetchAndSend(config)
+      .catch(err => {
+        console.error("MMM-MLB error:", err);
+        this.sendSocketNotification("MMM_MLB_ERROR", { error: err.message });
+      })
+      .finally(() => { this.inflight = null; });
   },
 
   async fetchAndSend(config) {
@@ -972,7 +1020,7 @@ module.exports = NodeHelper.create({
     });
     const upcoming = phase === "offseason" ? null : formatUpcomingSchedule(followingBracket ? post.games : teamGames, favId);
     const seasonEnd = (phase === "postseason" && post?.favStatus !== "alive") || phase === "offseason"
-      ? describeSeasonEnd(favId, favName, currentStandings, post) : null;
+      ? describeSeasonEnd(favId, favName, currentStandings, post, { brief: phase === "offseason" }) : null;
 
     // ── Frontend headline / context line ──
     let headline = null;
@@ -1003,11 +1051,17 @@ module.exports = NodeHelper.create({
       transactions, leagueTransactions, standingsChanges, standingsContext, upcoming, post,
       seasonEnd, nextSpring, contextKey,
       webSearch: config.webSearch !== false,
+      recentInsights: (cache.recentInsights || []).slice(0, 4),
+      angle: phase === "offseason" ? OFFSEASON_ANGLES[(cache.angleIndex || 0) % OFFSEASON_ANGLES.length](favName) : null,
     }, cache);
 
     // ── Persist cache ──
-    const madeCall = !!insightResult.lastAiCallTime;
+    const madeCall = !!insightResult.fresh;
     saveCache({
+      recentInsights: madeCall && insightResult.insight
+        ? [insightResult.insight, ...(cache.recentInsights || [])].slice(0, 4)
+        : (cache.recentInsights || []),
+      angleIndex: (cache.angleIndex || 0) + (madeCall && phase === "offseason" ? 1 : 0),
       usageDate: insightResult.usageDate,
       usageCount: insightResult.usageCount,
       lastAiCallTime: insightResult.lastAiCallTime || cache.lastAiCallTime,
